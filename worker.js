@@ -74,7 +74,8 @@ async function refreshFeed(env) {
   const payload = {
     items: curated.items || [],
     updatedAt: new Date().toISOString(),
-    sourceCount: new Set(fresh.map(x => x.source)).size
+    sourceCount: new Set(fresh.map(x => x.source)).size,
+    modelUsed: curated.modelUsed || env.GEMINI_MODEL || "unknown"
   };
 
   await env.DADOS_KV.put("feed", JSON.stringify(payload));
@@ -226,32 +227,63 @@ Return concise structured data for the DadOS cards.`;
     required: ["items"]
   };
 
-  const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
-    method: "POST",
-    headers: {
-      "x-goog-api-key": env.GEMINI_API_KEY,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      model: env.GEMINI_MODEL || "gemini-3.8-flash",
-      input: prompt,
-      response_format: {
-        type: "text",
-        mime_type: "application/json",
-        schema
-      }
-    })
-  });
+  const preferred = env.GEMINI_MODEL || "gemini-3.8-flash";
+  const modelOrder = [
+    preferred,
+    "gemini-3.7-flash",
+    "gemini-3.6-flash"
+  ].filter((model, index, arr) => arr.indexOf(model) === index);
 
-  if (!response.ok) {
-    throw new Error(`Gemini error ${response.status}: ${await response.text()}`);
+  let lastError = null;
+
+  for (const model of modelOrder) {
+    // Retry transient errors twice on each model before falling back.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
+        method: "POST",
+        headers: {
+          "x-goog-api-key": env.GEMINI_API_KEY,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model,
+          input: prompt,
+          response_format: {
+            type: "text",
+            mime_type: "application/json",
+            schema
+          }
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const text = findOutputText(data);
+        if (!text) {
+          lastError = new Error(`${model} returned no structured text output.`);
+          break;
+        }
+
+        const parsed = JSON.parse(text);
+        parsed.modelUsed = model;
+        return parsed;
+      }
+
+      const body = await response.text();
+      lastError = new Error(`Gemini error ${response.status} on ${model}: ${body}`);
+
+      // Only retry/fallback for transient capacity/rate/server errors.
+      const transient = response.status === 429 || response.status >= 500;
+      if (!transient) throw lastError;
+
+      if (attempt < 2) {
+        const delayMs = 800 * (2 ** attempt);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
+    }
   }
 
-  const data = await response.json();
-  const text = findOutputText(data);
-  if (!text) throw new Error("Gemini returned no structured text output.");
-
-  return JSON.parse(text);
+  throw lastError || new Error("All Gemini fallback models failed.");
 }
 
 function findOutputText(node) {
