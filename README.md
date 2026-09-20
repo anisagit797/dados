@@ -22,4 +22,10 @@ Do not paste the token into chat. Store it directly in Cloudflare as a Secret.
 
 ## Deployment
 This package is ready for a Wrangler or Git-connected deployment.
-deployment initialized
+
+
+## v6 change — permanent saved items
+
+Saved recommendations now store a full snapshot of the product card in browser storage.
+That means a saved product remains on the Saved page even after the live news feed refreshes
+and the product disappears from the active feed.

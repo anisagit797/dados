@@ -68,8 +68,27 @@ const watch = [
   {type:"HARDWARE",title:"Smaller, better-built travel tech",text:"The sweet spot is gear that replaces three mediocre things with one dependable one."}
 ];
 
-const memory = JSON.parse(localStorage.getItem("dadosMemory") || '{"saved":[],"owned":[],"dismissed":[]}');
+const rawMemory = JSON.parse(localStorage.getItem("dadosMemory") || '{"saved":[],"owned":[],"dismissed":[]}');
+const memory = {
+  // saved now stores full product snapshots so items survive future feed refreshes
+  saved: Array.isArray(rawMemory.saved) ? rawMemory.saved : [],
+  owned: Array.isArray(rawMemory.owned) ? rawMemory.owned : [],
+  dismissed: Array.isArray(rawMemory.dismissed) ? rawMemory.dismissed : []
+};
 const state={budget:"$$",distance:"90 min",hungry:"Maybe",mood:"Interesting"};
+
+function savedIds(){
+  return memory.saved.map(x => typeof x === "string" ? x : x.id).filter(Boolean);
+}
+function normalizeSaved(){
+  // Backward compatibility: old builds stored only IDs.
+  memory.saved = memory.saved.map(x => {
+    if(typeof x !== "string") return x;
+    const current = tech.find(t => t.id === x);
+    return current ? {...current, savedAt:new Date().toISOString()} : {id:x,title:x,brand:"Saved item",oneLine:"Saved from an earlier DadOS feed.",savedAt:new Date().toISOString()};
+  });
+}
+normalizeSaved();
 
 function persist(){localStorage.setItem("dadosMemory",JSON.stringify(memory));updateProfile();}
 function isDismissed(id){return memory.dismissed.includes(id)}
@@ -80,7 +99,7 @@ function score(item){
   if(item.tags.includes("Best match")) s+=5;
   if(item.tags.includes("Camera")) s+=3;
   if(item.tags.includes("Travel")) s+=2;
-  if(memory.saved.some(id=>getItem(id)?.tags.some(t=>item.tags.includes(t)))) s+=2;
+  if(savedIds().some(id=>getItem(id)?.tags.some(t=>item.tags.includes(t)))) s+=2;
   if(memory.owned.some(id=>getItem(id)?.tags.some(t=>item.tags.includes(t)))) s+=1;
   if(isDismissed(item.id)) s-=99;
   return s;
@@ -119,11 +138,21 @@ function renderTech(){
 function renderWatch(){document.getElementById("watchGrid").innerHTML=watch.map(x=>`<div class="watch-card"><span>${x.type}</span><h3>${x.title}</h3><p>${x.text}</p></div>`).join("")}
 
 window.feedback=function(id,type){
-  ["saved","owned","dismissed"].forEach(k=>memory[k]=memory[k].filter(x=>x!==id));
-  memory[type].push(id);
+  // Remove this item from all three feedback states first.
+  memory.saved = memory.saved.filter(x => (typeof x === "string" ? x : x.id) !== id);
+  memory.owned = memory.owned.filter(x => x !== id);
+  memory.dismissed = memory.dismissed.filter(x => x !== id);
+
+  if(type === "saved"){
+    const item = getItem(id);
+    if(item) memory.saved.push({...item, savedAt:new Date().toISOString()});
+  } else {
+    memory[type].push(id);
+  }
+
   persist();
   renderTech();
-  const labels={saved:"Saved for later",owned:"Got it — already owned",dismissed:"Got it — showing less like this"};
+  const labels={saved:"Saved permanently",owned:"Got it — already owned",dismissed:"Got it — showing less like this"};
   showToast(labels[type]);
 };
 
@@ -139,7 +168,16 @@ document.querySelectorAll(".nav-btn").forEach(b=>b.addEventListener("click",()=>
 function renderSaved(){
   const el=document.getElementById("savedList");
   if(!memory.saved.length){el.innerHTML="";return}
-  el.innerHTML=memory.saved.map(id=>{const x=getItem(id);return x?`<div class="saved-item"><b>${x.brand} ${x.title}</b><div style="color:#97a0ac;font-size:13px;margin-top:4px">${x.oneLine}</div></div>`:""}).join("");
+  el.innerHTML=memory.saved.map(x=>{
+    if(typeof x === "string"){
+      const current=getItem(x);
+      x=current || {brand:"Saved item",title:x,oneLine:"Saved from an earlier DadOS feed."};
+    }
+    return `<div class="saved-item">
+      <b>${x.brand || ""} ${x.title || ""}</b>
+      <div style="color:#97a0ac;font-size:13px;margin-top:4px">${x.oneLine || x.summary || ""}</div>
+    </div>`;
+  }).join("");
 }
 function updateProfile(){
   document.getElementById("savedCount").textContent=memory.saved.length;
@@ -214,6 +252,7 @@ async function loadLiveFeed(){
   }
 }
 
+persist();
 renderTech();
 renderWatch();
 updateProfile();
