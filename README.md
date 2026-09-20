@@ -22,3 +22,4 @@ Do not paste the token into chat. Store it directly in Cloudflare as a Secret.
 
 ## Deployment
 This package is ready for a Wrangler or Git-connected deployment.
+deployment initialized
