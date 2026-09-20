@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DadOS</title>
+  <meta name="description" content="Interesting things to buy. Interesting things to do. No junk." />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="ambient ambient-one"></div>
+  <div class="ambient ambient-two"></div>
+
+  <header class="site-header">
+    <div class="brand-wrap">
+      <div class="logo">D</div>
+      <div>
+        <div class="brand">DadOS</div>
+        <div class="tagline">No junk. No clutter. No nonsense.</div>
+      </div>
+    </div>
+    <nav>
+      <button class="nav-btn active" data-target="home">Discover</button>
+      <button class="nav-btn" data-target="plan">Plan</button>
+      <button class="nav-btn" data-target="go">Go Somewhere</button>
+      <button class="nav-btn" data-target="saved">Saved</button>
+      <button class="nav-btn" data-target="profile">Profile</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="home" class="page active">
+      <div class="hero card glass">
+        <div>
+          <span class="eyebrow">CURATED FOR YOU</span>
+          <h1>Good morning.<br><span>Here’s what’s worth your attention.</span></h1>
+          <p>Fresh tech, useful upgrades, and interesting things filtered around what you actually like.</p>
+        </div>
+        <button id="surpriseBtn" class="primary-btn">Surprise me ↗</button>
+      </div>
+
+      <div class="section-head">
+        <div>
+          <span class="eyebrow">BEST MATCH</span>
+          <h2>Most likely to be your thing</h2>
+        </div>
+        <div class="refresh-pill">Updated <span id="updatedText">today</span></div>
+      </div>
+      <div id="bestMatchGrid" class="tech-grid"></div>
+
+      <div class="section-head compact">
+        <div>
+          <span class="eyebrow">NEW & INTERESTING</span>
+          <h2>Fresh finds without the junk</h2>
+        </div>
+      </div>
+      <div id="techGrid" class="tech-grid"></div>
+
+      <div class="section-head compact">
+        <div>
+          <span class="eyebrow">WORTH WATCHING</span>
+          <h2>Things that might become great</h2>
+        </div>
+      </div>
+      <div id="watchGrid" class="watch-grid"></div>
+    </section>
+
+    <section id="plan" class="page">
+      <div class="split">
+        <div class="card planner-panel glass">
+          <span class="eyebrow">PLAN SOMETHING</span>
+          <h1>What are you doing soon?</h1>
+          <p>Give DadOS the plan. It’ll turn that into a useful, organized brief — no chatting required.</p>
+          <label for="tripInput">Upcoming plan</label>
+          <textarea id="tripInput" placeholder="Going to Taiwan for 10 days in November..."></textarea>
+          <div class="quick-chips">
+            <button class="chip">Long flight</button>
+            <button class="chip">International trip</button>
+            <button class="chip">Hotel stay</button>
+            <button class="chip">Photography</button>
+          </div>
+          <button id="generatePlanBtn" class="primary-btn wide">Build my brief</button>
+        </div>
+        <div class="card profile-card">
+          <span class="eyebrow">DADOS FILTER</span>
+          <h3>What makes the cut</h3>
+          <div class="profile-row"><span>Established brands</span><b>Preferred</b></div>
+          <div class="profile-row"><span>Solid build quality</span><b>Important</b></div>
+          <div class="profile-row"><span>Travel + cameras</span><b>High interest</b></div>
+          <div class="profile-row"><span>Low-clutter usefulness</span><b>Preferred</b></div>
+          <div class="profile-row"><span>Generic rebrand junk</span><b class="bad">Skip</b></div>
+          <div class="profile-row"><span>Suspiciously cheap hardware</span><b class="bad">Skip</b></div>
+        </div>
+      </div>
+      <div id="planResults" class="results hidden"></div>
+    </section>
+
+    <section id="go" class="page">
+      <div class="card glass activity-form">
+        <span class="eyebrow">GO SOMEWHERE</span>
+        <h1>What kind of day are we working with?</h1>
+        <p>Pick the vibe. DadOS will surface a few things that are actually worth leaving the house for.</p>
+        <div class="form-grid">
+          <div class="control">
+            <label>Energy <span id="energyValue">3/5</span></label>
+            <input id="energy" type="range" min="1" max="5" value="3" />
+            <div class="range-labels"><span>Couch</span><span>Send it</span></div>
+          </div>
+          <div class="control">
+            <label>Budget</label>
+            <div class="segmented" data-control="budget">
+              <button data-value="$">$</button>
+              <button class="selected" data-value="$$">$$</button>
+              <button data-value="$$$">$$$</button>
+              <button data-value="Whatever">Whatever</button>
+            </div>
+          </div>
+          <div class="control">
+            <label>Drive</label>
+            <div class="segmented" data-control="distance">
+              <button data-value="15 min">&lt;15m</button>
+              <button data-value="45 min">45m</button>
+              <button class="selected" data-value="90 min">90m</button>
+              <button data-value="Road trip">Road trip</button>
+            </div>
+          </div>
+          <div class="control">
+            <label>Hungry?</label>
+            <div class="segmented" data-control="hungry">
+              <button data-value="No">No</button>
+              <button class="selected" data-value="Maybe">Maybe</button>
+              <button data-value="Definitely">Definitely</button>
+            </div>
+          </div>
+          <div class="control full">
+            <label>Mood</label>
+            <div id="moods" class="mood-grid">
+              <button class="mood selected">Interesting</button>
+              <button class="mood">Adventurous</button>
+              <button class="mood">Relaxing</button>
+              <button class="mood">Weird</button>
+              <button class="mood">Outdoors</button>
+              <button class="mood">Competitive</button>
+            </div>
+          </div>
+        </div>
+        <button id="findActivityBtn" class="primary-btn">Give me ideas</button>
+      </div>
+      <div id="activityResults" class="results hidden"></div>
+    </section>
+
+    <section id="saved" class="page">
+      <div class="empty-state card glass">
+        <div class="empty-icon">☆</div>
+        <h1>Saved for later</h1>
+        <p>Things worth coming back to.</p>
+        <div id="savedList"></div>
+      </div>
+    </section>
+
+    <section id="profile" class="page">
+      <div class="split">
+        <div class="card profile-card">
+          <span class="eyebrow">LEARNING PROFILE</span>
+          <h1>Your DadOS taste profile</h1>
+          <p class="muted-copy">DadOS learns from explicit feedback: what you save, already own, or reject.</p>
+          <div class="stat-grid">
+            <div class="stat"><b id="savedCount">0</b><span>Saved</span></div>
+            <div class="stat"><b id="ownedCount">0</b><span>Already owned</span></div>
+            <div class="stat"><b id="dismissedCount">0</b><span>Not interested</span></div>
+          </div>
+        </div>
+        <div class="card profile-card">
+          <span class="eyebrow">ALREADY OWN</span>
+          <h3>Known gear</h3>
+          <div id="ownedList" class="profile-list"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast">Saved</div>
+  <script src="app.js"></script>
+</body>
+</html>
