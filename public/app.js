@@ -81,7 +81,7 @@ async function loadFeed(){
       $("feedStatus").textContent="No strong finds yet";
     }
   }catch(e){
-    $("feedStatus").textContent="Fresh feed temporarily unavailable";
+    $("feedStatus").textContent="No fresh finds available right now";
   }
   renderProducts();
 }

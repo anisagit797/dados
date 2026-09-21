@@ -1,15 +1,17 @@
-# DadOS v12 Fixed
+# DadOS v13 Stable
 
-Targeted fixes only:
+Targeted reliability fixes:
 
-1. Fresh Finds bootstraps itself on first load if KV is empty.
-2. Go Somewhere tries multiple Overpass endpoints.
-3. If real-place data sources are temporarily unavailable, Go Somewhere returns useful clickable Google Maps searches instead of a dead error.
-4. Core Pick spans the page so there is no giant empty half-column.
-5. Plan logic is unchanged from the working clean-reset version.
+- Go Somewhere no longer depends on Overpass at all.
+- It uses a built-in catalog of real nearby destinations, then Gemini ranks them.
+- If Gemini fails, local ranking still works.
+- Fresh Finds now uses multiple RSS sources plus a Google News RSS fallback.
+- If Gemini curation fails, real recent article cards still render.
+- KV is optional for reading/writing the feed; it is no longer a single point of failure.
+- Planner remains unchanged.
 
-Upload these directly to the repo root:
+Upload to repo root:
 - worker.js
-- wrangler.toml
 - README.md
 - public/
+Keep your existing wrangler.toml.

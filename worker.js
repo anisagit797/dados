@@ -89,150 +89,190 @@ Use 4-6 sections, 2-4 items each. A road trip must look like a road-trip brief; 
 }
 
 async function activities(prefs,env){
-  const base={lat:38.9586,lon:-77.3570}; // Reston city center
-  const drive=Number(prefs.distance)||45;
-  const radiusByMinutes={15:18000,45:50000,90:90000,180:150000};
-  const radius=radiusByMinutes[drive]||50000;
-
-  const q=`[out:json][timeout:18];(
-nwr(around:${radius},${base.lat},${base.lon})["name"]["tourism"~"attraction|museum|viewpoint|theme_park|zoo|gallery"];
-nwr(around:${radius},${base.lat},${base.lon})["name"]["leisure"~"water_park|escape_game|amusement_arcade|marina"];
-nwr(around:${radius},${base.lat},${base.lon})["name"]["sport"~"climbing|karting|skiing|archery|canoe|kayak"];
-);out center tags 70;`;
-
-  const endpoints=[
-    "https://overpass.kumi.systems/api/interpreter",
-    "https://overpass-api.de/api/interpreter",
-    "https://overpass.nchc.org.tw/api/interpreter"
-  ];
-
-  let d=null,lastError=null;
-  for(const endpoint of endpoints){
-    try{
-      const r=await fetch(endpoint,{
-        method:"POST",
-        headers:{
-          "content-type":"application/x-www-form-urlencoded;charset=UTF-8",
-          "user-agent":"DadOS/1.0"
-        },
-        body:"data="+encodeURIComponent(q)
-      });
-      if(!r.ok){lastError=new Error(`Place source ${r.status}`);continue}
-      d=await r.json();
-      if(Array.isArray(d.elements))break;
-    }catch(e){lastError=e}
-  }
-
-  let items=[];
-  if(d?.elements){
-    items=d.elements.map(e=>{
-      const t=e.tags||{},lat=e.lat??e.center?.lat,lon=e.lon??e.center?.lon;
-      if(!t.name||!Number.isFinite(lat)||!Number.isFinite(lon))return null;
-      return {
-        name:t.name,
-        kind:t.tourism||t.leisure||t.sport||"attraction",
-        website:norm(t.website||t["contact:website"]||""),
-        lat,lon
-      };
-    }).filter(Boolean);
-
-    const seen=new Set();
-    items=items.filter(x=>{
-      const k=x.name.toLowerCase().replace(/[^a-z0-9]+/g,"");
-      if(!k||seen.has(k))return false;
-      seen.add(k);return true;
-    }).slice(0,45);
-  }
-
-  if(items.length){
-    let ranked;
-    try{
-      ranked=await gemini(`Choose up to 6 REAL places only from this list for DadOS.
-Preferences: ${JSON.stringify({energy:prefs.energy,budget:prefs.budget,mood:prefs.mood,hungry:prefs.hungry,distance:prefs.distance})}
-Prefer memorable, unusual, scenic, adventurous, technical, experiential, or genuinely relaxing options over generic everyday places.
-Do not invent any place or alter its name.
-Return JSON: {"heading":"short heading","items":[{"name":"EXACT name","why":"one sentence"}]}
-Candidates: ${JSON.stringify(items.map(x=>({name:x.name,kind:x.kind})))}`,env);
-    }catch(e){
-      ranked={heading:"Nearby ideas",items:items.slice(0,6).map(x=>({name:x.name,why:"A real nearby option that fits the search area."}))};
+  const catalog=[
+    {
+      name:"iFLY Loudoun",
+      kind:"Indoor skydiving",
+      energy:4,
+      budget:"$$$",
+      moods:["Adventurous","Interesting"],
+      website:"https://www.iflyworld.com/loudoun",
+      mapsUrl:"https://www.google.com/maps/search/?api=1&query="+encodeURIComponent("iFLY Loudoun Ashburn Virginia"),
+      note:"Indoor skydiving in Ashburn."
+    },
+    {
+      name:"Great Falls Park",
+      kind:"Scenic / outdoors",
+      energy:3,
+      budget:"$",
+      moods:["Outdoors","Relaxing","Interesting"],
+      website:"https://www.nps.gov/grfa/",
+      mapsUrl:"https://www.google.com/maps/search/?api=1&query="+encodeURIComponent("Great Falls Park Virginia"),
+      note:"Potomac overlooks and hiking trails."
+    },
+    {
+      name:"Go Ape Springfield",
+      kind:"Zipline / ropes course",
+      energy:5,
+      budget:"$$",
+      moods:["Adventurous","Outdoors","Competitive"],
+      website:"https://www.goape.com/location/virginia-springfield/",
+      mapsUrl:"https://www.google.com/maps/search/?api=1&query="+encodeURIComponent("Go Ape Springfield Virginia"),
+      note:"Treetop ropes course, ziplines, and an outdoor escape-style experience."
+    },
+    {
+      name:"Harpers Ferry Adventure Center",
+      kind:"Rafting / zipline / kayaking",
+      energy:5,
+      budget:"$$$",
+      moods:["Adventurous","Outdoors"],
+      website:"https://harpersferryadventurecenter.com/",
+      mapsUrl:"https://www.google.com/maps/search/?api=1&query="+encodeURIComponent("Harpers Ferry Adventure Center"),
+      note:"Tubing, rafting, kayaking, zipline, ropes course, and camping."
+    },
+    {
+      name:"Summit Point Motorsports Park",
+      kind:"Motorsports",
+      energy:4,
+      budget:"$$$",
+      moods:["Competitive","Adventurous","Interesting"],
+      website:"https://summitpointmp.com/",
+      mapsUrl:"https://www.google.com/maps/search/?api=1&query="+encodeURIComponent("Summit Point Motorsports Park"),
+      note:"Road-course events and driving programs."
+    },
+    {
+      name:"Wisp Resort Mountain Park",
+      kind:"Mountain adventure",
+      energy:4,
+      budget:"$$$",
+      moods:["Adventurous","Outdoors","Interesting"],
+      website:"https://www.wispresort.com/activity/mountain-adventures/",
+      mapsUrl:"https://www.google.com/maps/search/?api=1&query="+encodeURIComponent("Wisp Resort Mountain Park Maryland"),
+      note:"Mountain-park activities; check current operating status before driving out."
     }
-    const map=new Map(items.map(x=>[x.name,x]));
-    const out=(ranked.items||[]).map(x=>{
-      const real=map.get(x.name);if(!real)return null;
-      return {
-        name:real.name,
-        kind:real.kind,
-        why:x.why||"",
-        website:real.website,
-        mapsUrl:`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(real.name+" near Reston Virginia")}`
-      };
-    }).filter(Boolean);
-    if(out.length)return {heading:ranked.heading||"Nearby ideas",items:out};
+  ];
+
+  const energy=Number(prefs.energy)||3;
+  const mood=String(prefs.mood||"Interesting");
+  const budget=String(prefs.budget||"$$");
+
+  let ranked;
+  try{
+    ranked=await gemini(`Rank these REAL nearby activity options for DadOS.
+Preferences: ${JSON.stringify({energy,budget,mood,hungry:prefs.hungry,distance:prefs.distance})}
+You may ONLY return exact names from the catalog.
+Prefer memorable, unusual, scenic, adventurous, technical, experiential, or genuinely relaxing options.
+Return JSON exactly:
+{"heading":"short heading","items":[{"name":"EXACT NAME","why":"one concise sentence"}]}
+Catalog: ${JSON.stringify(catalog.map(x=>({name:x.name,kind:x.kind,note:x.note})))}`,env);
+  }catch(e){
+    ranked={heading:"Nearby ideas",items:catalog
+      .map(x=>({
+        ...x,
+        score:(x.moods.includes(mood)?3:0) - Math.abs(x.energy-energy)
+      }))
+      .sort((a,b)=>b.score-a.score)
+      .slice(0,5)
+      .map(x=>({name:x.name,why:x.note}))};
   }
 
-  // Graceful fallback: still return useful, clickable nearby searches instead of a dead error.
-  const mood=String(prefs.mood||"Interesting");
-  const energy=Number(prefs.energy)||3;
-  const searches=[
-    {name:"Mountain coaster / alpine slide",kind:"Adventure",q:"mountain coaster near Reston Virginia"},
-    {name:"Indoor skydiving",kind:"Adventure",q:"indoor skydiving near Reston Virginia"},
-    {name:"Scenic winery or countryside stop",kind:"Relaxing",q:"scenic winery near Reston Virginia"},
-    {name:"Kayaking or paddle outing",kind:"Outdoors",q:"kayaking near Reston Virginia"},
-    {name:"Escape room or immersive game",kind:"Competitive",q:"best escape room near Reston Virginia"},
-    {name:"Unusual museum or exhibit",kind:"Interesting",q:"unusual museum near Reston Virginia"}
-  ];
-  const ordered=searches.sort((a,b)=>{
-    const as=(a.kind.toLowerCase()===mood.toLowerCase()?2:0)+(energy>=4&&a.kind==="Adventure"?1:0);
-    const bs=(b.kind.toLowerCase()===mood.toLowerCase()?2:0)+(energy>=4&&b.kind==="Adventure"?1:0);
-    return bs-as;
-  }).slice(0,6);
+  const map=new Map(catalog.map(x=>[x.name,x]));
+  const items=(ranked.items||[]).map(r=>{
+    const real=map.get(r.name);
+    if(!real)return null;
+    return {
+      name:real.name,
+      kind:real.kind,
+      why:r.why||real.note,
+      website:real.website,
+      mapsUrl:real.mapsUrl
+    };
+  }).filter(Boolean);
 
-  return {
-    heading:"Nearby searches worth exploring",
-    items:ordered.map(x=>({
-      name:x.name,
-      kind:x.kind,
-      why:"Open the map search to see current nearby options, hours, and reviews.",
-      website:"",
-      mapsUrl:`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(x.q)}`
-    })),
-    fallback:true,
-    note:lastError?String(lastError.message||lastError):"Primary place source unavailable"
-  };
+  return {heading:ranked.heading||"Nearby ideas",items};
 }
 function norm(u){if(!u)return"";return /^https?:\/\//i.test(u)?u:"https://"+u}
 
 async function refreshFeed(env){
-  if(!env.DADOS_KV)throw new Error("DADOS_KV missing");
   const feeds=[
     ["The Verge","https://www.theverge.com/rss/index.xml"],
     ["Engadget","https://www.engadget.com/rss.xml"],
     ["TechCrunch","https://techcrunch.com/feed/"],
-    ["Ars Technica","https://feeds.arstechnica.com/arstechnica/gadgets"]
+    ["Ars Technica","https://feeds.arstechnica.com/arstechnica/gadgets"],
+    ["Google News Tech","https://news.google.com/rss/search?q=consumer+technology+gadgets+camera+drone+travel+tech&hl=en-US&gl=US&ceid=US:en"]
   ];
+
   const found=[];
   for(const [source,url] of feeds){
     try{
-      const r=await fetch(url,{headers:{"user-agent":"DadOS/1.0"}});
+      const r=await fetch(url,{
+        headers:{
+          "user-agent":"Mozilla/5.0 DadOS/1.0",
+          "accept":"application/rss+xml,application/xml,text/xml,*/*"
+        },
+        redirect:"follow"
+      });
       if(!r.ok)continue;
       const xml=await r.text();
       const chunks=xml.match(/<(item|entry)\b[\s\S]*?<\/\1>/gi)||[];
-      for(const block of chunks.slice(0,8)){
-        const title=tag(block,"title"), link=tag(block,"link")||href(block), desc=strip(tag(block,"description")||tag(block,"summary"));
+      for(const block of chunks.slice(0,10)){
+        const title=tag(block,"title");
+        const link=tag(block,"link")||href(block);
+        const desc=strip(tag(block,"description")||tag(block,"summary"));
         if(title&&link)found.push({source,title,link,desc:desc.slice(0,500)});
       }
     }catch(e){}
   }
-  if(!found.length)throw new Error("No feed items found");
-  const curated=await gemini(`Curate at most 8 specific consumer-tech products from these recent tech-news items for DadOS.
-Taste: cameras, drones, smart glasses, travel tech, useful hardware, quality-of-life upgrades. Prefer reputable/well-built products. Reject funding news, enterprise software, rumors, generic junk, and suspiciously cheap hardware.
-Never invent facts or products not supported by the source items.
-Return JSON:
-{"items":[{"id":"slug","brand":"brand","title":"product","price":"price if present otherwise Price not listed","summary":"what it is","why":"why it fits DadOS","official":"","sourceUrl":"exact article URL"}]}
-Items: ${JSON.stringify(found)}`,env);
-  const payload={items:curated.items||[],updatedAt:new Date().toISOString()};
-  await env.DADOS_KV.put("feed",JSON.stringify(payload));
-  return {ok:true,...payload};
+
+  if(!found.length){
+    const fallback={
+      items:[],
+      updatedAt:new Date().toISOString(),
+      note:"No source feeds responded"
+    };
+    if(env.DADOS_KV)await env.DADOS_KV.put("feed",JSON.stringify(fallback));
+    return fallback;
+  }
+
+  const positive=["camera","drone","gadget","glasses","wearable","travel","charger","battery","router","earbud","headphone","projector","robot","portable","accessory","review","launch","announced","hands-on","360","garmin","anker","sony","meta","insta360","gopro","dji","apple","samsung","bose"];
+  const negative=["funding","valuation","earnings","layoff","lawsuit","crypto","bitcoin","enterprise","data center","datacenter","rumor","leak"];
+
+  const candidates=found.filter(x=>{
+    const t=(x.title+" "+x.desc).toLowerCase();
+    if(negative.some(k=>t.includes(k)))return false;
+    return positive.some(k=>t.includes(k));
+  }).slice(0,30);
+
+  let items=[];
+  try{
+    if(candidates.length){
+      const curated=await gemini(`Curate at most 8 specific consumer-tech products from these recent tech-news items for DadOS.
+Taste: cameras, drones, smart glasses, travel tech, useful hardware, quality-of-life upgrades. Prefer reputable/well-built products. Reject generic junk and weakly supported claims.
+Never invent a product, price, or fact not supported by the source items.
+Return JSON exactly:
+{"items":[{"id":"slug","brand":"brand if clear otherwise Tech","title":"product or article subject","price":"Price not listed","summary":"1 sentence","why":"why it fits DadOS","official":"","sourceUrl":"exact source URL"}]}
+Items: ${JSON.stringify(candidates)}`,env);
+      items=curated.items||[];
+    }
+  }catch(e){}
+
+  // If AI curation fails, still show real recent coverage instead of an empty feed.
+  if(!items.length){
+    items=(candidates.length?candidates:found.slice(0,8)).slice(0,8).map((x,i)=>({
+      id:"news-"+i+"-"+x.title.toLowerCase().replace(/[^a-z0-9]+/g,"-").slice(0,45),
+      brand:x.source,
+      title:x.title,
+      price:"Recent coverage",
+      summary:x.desc||"Recent consumer-tech coverage.",
+      why:"Recent tech coverage that passed DadOS's basic hardware-interest filter.",
+      official:"",
+      sourceUrl:x.link
+    }));
+  }
+
+  const payload={items,updatedAt:new Date().toISOString()};
+  if(env.DADOS_KV)await env.DADOS_KV.put("feed",JSON.stringify(payload));
+  return payload;
 }
 function tag(block,name){const m=block.match(new RegExp(`<${name}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${name}>`,"i"));return m?decode(m[1].replace(/^<!\[CDATA\[|\]\]>$/g,"").trim()):""}
 function href(block){const m=block.match(/<link\b[^>]*href=["']([^"']+)["']/i);return m?decode(m[1]):""}
