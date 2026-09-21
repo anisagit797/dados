@@ -53,3 +53,40 @@ DadOS now uses a warmer, more premium olive/graphite palette:
 - less glow / less template-like visual noise
 - more subtle borders and spacing
 - preserved all v7 Gemini fallback behavior and v6 permanent saves
+
+
+## v9 — real nearby activity discovery + brighter palette
+
+### Go Somewhere
+The activity tool now queries real OpenStreetMap/OpenStreetMap-derived nearby place data through
+Nominatim + Overpass, then uses Gemini only to rank the returned real places.
+
+Every result includes:
+- a real place name
+- a Google Maps search link
+- the venue website when OpenStreetMap has one
+- a short reason matched to energy/budget/distance/mood
+
+Gemini is explicitly forbidden from inventing place names.
+
+### Visuals
+The site was brightened from near-black to a warmer medium graphite/stone palette while keeping
+the restrained olive accent.
+
+
+## v10 — light stone / olive palette + cache busting
+
+The visual system is now clearly non-black:
+- warm cream / stone background
+- pale ivory product cards
+- olive controls and accents
+- dark olive-charcoal typography
+- restrained shadows
+
+The frontend now references:
+- `styles.css?v=10`
+- `app.js?v=10`
+
+This prevents an old browser/CDN cache from silently reusing the previous design.
+
+A tiny `DadOS v10` marker appears at the bottom-right of the page so deployment can be verified immediately.

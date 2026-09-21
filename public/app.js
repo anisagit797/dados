@@ -1,3 +1,4 @@
+console.info('DadOS v10 loaded');
 let tech = [
   {
     id:"follow-drone",
@@ -205,19 +206,58 @@ document.getElementById("energy").addEventListener("input",e=>document.getElemen
 document.querySelectorAll(".segmented").forEach(group=>{group.querySelectorAll("button").forEach(btn=>btn.addEventListener("click",()=>{group.querySelectorAll("button").forEach(x=>x.classList.remove("selected"));btn.classList.add("selected");state[group.dataset.control]=btn.dataset.value}))});
 document.querySelectorAll(".mood").forEach(btn=>btn.addEventListener("click",()=>{document.querySelectorAll(".mood").forEach(x=>x.classList.remove("selected"));btn.classList.add("selected");state.mood=btn.textContent}));
 
-document.getElementById("findActivityBtn").addEventListener("click",()=>{
+document.getElementById("findActivityBtn").addEventListener("click", async ()=>{
+  const btn=document.getElementById("findActivityBtn");
+  const el=document.getElementById("activityResults");
   const energy=Number(document.getElementById("energy").value);
-  const ideas=[
-    {meta:"ADVENTURE • DAY TRIP",title:"Mountain coaster + scenic drive",text:"Something memorable enough to justify the drive, with a good food stop built in."},
-    {meta:"TECH + HISTORY • HALF DAY",title:"Aviation rabbit hole",text:"Pair an aviation or technology museum with one intentionally good meal nearby."},
-    {meta:"WEIRD • 2–4 HOURS",title:"Book one thing you’d never normally book",text:`With energy ${energy}/5 and a ${state.budget} budget, prioritize one memorable activity over filling the day with errands.`}
-  ];
-  if(state.mood==="Relaxing")ideas[0]={meta:"LOW EFFORT • HALF DAY",title:"Scenic destination + one great reservation",text:"Drive somewhere pretty, keep the walking optional, and make the meal the anchor."};
-  const el=document.getElementById("activityResults");el.classList.remove("hidden");el.innerHTML=`<div class="result-title"><span class="eyebrow">TODAY'S SHORTLIST</span><h2>Three ideas. No endless scrolling.</h2></div><div class="activity-list">${ideas.map(i=>`<article class="activity-card"><div class="meta">${i.meta}</div><h3>${i.title}</h3><p>${i.text}</p></article>`).join("")}</div>`;
+
+  btn.disabled=true;
+  btn.textContent="Finding real places…";
+  el.classList.remove("hidden");
+  el.innerHTML=`<div class="result-title"><span class="eyebrow">SEARCHING NEARBY</span><h2>Looking for things actually worth doing…</h2></div>`;
+
+  try{
+    const res=await fetch("/api/activities",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        location:"Reston, Virginia",
+        energy,
+        budget:state.budget,
+        distance:state.distance,
+        hungry:state.hungry,
+        mood:state.mood
+      })
+    });
+    if(!res.ok) throw new Error(await res.text());
+    const data=await res.json();
+    const ideas=Array.isArray(data.items)?data.items:[];
+
+    if(!ideas.length) throw new Error("No nearby results returned.");
+
+    el.innerHTML=`<div class="result-title"><span class="eyebrow">TODAY'S SHORTLIST</span><h2>Real places. No endless scrolling.</h2></div>
+      <div class="activity-list">${ideas.map(i=>`
+        <article class="activity-card">
+          <div class="meta">${escapeHtml(i.meta || "NEARBY")}</div>
+          <h3>${escapeHtml(i.name || "Interesting place")}</h3>
+          <p>${escapeHtml(i.why || i.description || "")}</p>
+          <div class="activity-links">
+            ${i.website ? `<a href="${escapeAttr(i.website)}" target="_blank" rel="noopener">Website ↗</a>` : ""}
+            <a href="${escapeAttr(i.mapsUrl)}" target="_blank" rel="noopener">Open in Maps ↗</a>
+          </div>
+        </article>`).join("")}</div>`;
+  }catch(err){
+    el.innerHTML=`<div class="result-title"><span class="eyebrow">COULDN'T SEARCH</span><h2>Nearby search had a hiccup.</h2></div>
+      <div class="saved-item">Try again in a moment. DadOS only shows real places here, so it won't invent filler when the live search is unavailable.</div>`;
+  }finally{
+    btn.disabled=false;
+    btn.textContent="Give me ideas";
+  }
 });
 
 document.getElementById("surpriseBtn").addEventListener("click",()=>{const pool=tech.filter(x=>!isDismissed(x.id));const pick=pool[Math.floor(Math.random()*pool.length)];alert(`${pick.brand} ${pick.title}\n\n${pick.why}`)});
-function escapeHtml(str){return str.replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]))}
+function escapeHtml(str){return String(str ?? "").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]))}
+function escapeAttr(str){return escapeHtml(String(str ?? ""))}
 
 async function loadLiveFeed(){
   try{

@@ -21,6 +21,16 @@ export default {
       return Response.json(cached || { items: [], updatedAt: null });
     }
 
+    if (url.pathname === "/api/activities" && request.method === "POST") {
+      try {
+        const input = await request.json();
+        const result = await findActivities(input, env);
+        return Response.json(result);
+      } catch (error) {
+        return Response.json({ ok:false, error:String(error?.message || error) }, { status:500 });
+      }
+    }
+
     // Manual refresh endpoint. Protect it with ADMIN_TOKEN.
     if (url.pathname === "/api/refresh" && request.method === "POST") {
       if (!env.ADMIN_TOKEN || request.headers.get("Authorization") !== `Bearer ${env.ADMIN_TOKEN}`) {
@@ -284,6 +294,173 @@ Return concise structured data for the DadOS cards.`;
   }
 
   throw lastError || new Error("All Gemini fallback models failed.");
+}
+
+
+async function findActivities(input, env) {
+  const location = String(input.location || "Reston, Virginia").slice(0,120);
+  const mood = String(input.mood || "Interesting").slice(0,40);
+  const distance = String(input.distance || "90 min");
+  const hungry = String(input.hungry || "Maybe");
+  const energy = Math.max(1, Math.min(5, Number(input.energy) || 3));
+  const budget = String(input.budget || "$$");
+
+  const geoRes = await fetch(
+    `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(location)}`,
+    { headers:{ "User-Agent":"DadOS/1.0 personal activity discovery" } }
+  );
+  if (!geoRes.ok) throw new Error("Could not locate the search area.");
+  const geo = await geoRes.json();
+  if (!geo.length) throw new Error("Could not locate the search area.");
+
+  const lat = Number(geo[0].lat);
+  const lon = Number(geo[0].lon);
+
+  const radiusMap = {
+    "15 min": 18000,
+    "45 min": 50000,
+    "90 min": 95000,
+    "Road trip": 140000
+  };
+  const radius = radiusMap[distance] || 95000;
+
+  // Real named places only. We intentionally avoid restaurant-heavy results here;
+  // food can be part of the AI rationale but the activity remains the anchor.
+  const query = `[out:json][timeout:25];
+(
+  nwr(around:${radius},${lat},${lon})["name"]["tourism"~"attraction|museum|viewpoint|theme_park|zoo|gallery"];
+  nwr(around:${radius},${lat},${lon})["name"]["leisure"~"water_park|sports_centre|escape_game|amusement_arcade|marina|golf_course"];
+  nwr(around:${radius},${lat},${lon})["name"]["sport"~"climbing|karting|skiing|shooting|archery|canoe|kayak"];
+);
+out center tags 90;`;
+
+  const overpass = await fetch("https://overpass-api.de/api/interpreter", {
+    method:"POST",
+    headers:{
+      "Content-Type":"application/x-www-form-urlencoded;charset=UTF-8",
+      "User-Agent":"DadOS/1.0 personal activity discovery"
+    },
+    body:"data="+encodeURIComponent(query)
+  });
+  if (!overpass.ok) throw new Error("Nearby place search is temporarily unavailable.");
+  const osm = await overpass.json();
+
+  let candidates = (osm.elements || []).map(el => {
+    const t = el.tags || {};
+    const plat = el.lat ?? el.center?.lat;
+    const plon = el.lon ?? el.center?.lon;
+    const website = t.website || t["contact:website"] || "";
+    const category = t.tourism || t.leisure || t.sport || "attraction";
+    return {
+      name:t.name,
+      category,
+      website: normalizeUrl(website),
+      lat:plat,
+      lon:plon,
+      distanceKm: haversine(lat, lon, plat, plon)
+    };
+  }).filter(x => x.name && Number.isFinite(x.lat) && Number.isFinite(x.lon));
+
+  // Deduplicate and keep a manageable pool.
+  const seen = new Set();
+  candidates = candidates.filter(x => {
+    const key=x.name.toLowerCase().replace(/[^a-z0-9]+/g,"");
+    if(!key || seen.has(key)) return false;
+    seen.add(key); return true;
+  }).sort((a,b)=>a.distanceKm-b.distanceKm).slice(0,45);
+
+  if (!candidates.length) return { ok:true, items:[] };
+
+  // Gemini ranks only REAL candidates returned by OSM; it is forbidden to invent places.
+  const ranked = await rankActivitiesWithGemini(candidates, {mood,distance,hungry,energy,budget}, env);
+
+  const byName = new Map(candidates.map(x=>[x.name,x]));
+  const items = (ranked.items || []).map(r => {
+    const real = byName.get(r.name);
+    if(!real) return null;
+    const mapsQuery = `${real.name} near ${location}`;
+    return {
+      name: real.name,
+      meta: r.meta || `${real.category} • ${Math.round(real.distanceKm)} km`,
+      why: r.why || "",
+      website: real.website,
+      mapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapsQuery)}`
+    };
+  }).filter(Boolean).slice(0,6);
+
+  return { ok:true, items, location };
+}
+
+async function rankActivitiesWithGemini(candidates, prefs, env) {
+  if (!env.GEMINI_API_KEY) {
+    return { items:candidates.slice(0,6).map(x=>({name:x.name,meta:`${x.category} • ${Math.round(x.distanceKm)} km`,why:"A real nearby option that fits the requested search area."})) };
+  }
+
+  const prompt = `You rank REAL nearby activity options for DadOS.
+
+Preferences:
+${JSON.stringify(prefs)}
+
+Rules:
+- You may ONLY choose names exactly from the candidate list.
+- Never invent a place.
+- Prefer unusual, memorable, adventurous, techy, scenic, experiential, or genuinely interesting options over generic everyday places.
+- Match the requested energy, budget, drive range, hunger level, and mood.
+- Choose at most 6 and keep variety.
+- "why" should be one concise sentence.
+- "meta" should be a short category/vibe label, not marketing fluff.
+
+Candidates:
+${JSON.stringify(candidates.map(x=>({name:x.name,category:x.category,distanceKm:Math.round(x.distanceKm)})))}
+
+Return JSON only:
+{"items":[{"name":"exact candidate name","meta":"short label","why":"one sentence"}]}`;
+
+  const models = [
+    env.GEMINI_MODEL || "gemini-3.8-flash",
+    "gemini-3.7-flash",
+    "gemini-3.6-flash"
+  ].filter((m,i,a)=>a.indexOf(m)===i);
+
+  for(const model of models){
+    try{
+      const res = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions",{
+        method:"POST",
+        headers:{"x-goog-api-key":env.GEMINI_API_KEY,"Content-Type":"application/json"},
+        body:JSON.stringify({
+          model,
+          input:prompt,
+          response_format:{type:"text",mime_type:"application/json"}
+        })
+      });
+      if(!res.ok) continue;
+      const data=await res.json();
+      const text=findOutputText(data);
+      if(!text) continue;
+      const parsed=JSON.parse(text);
+      if(Array.isArray(parsed.items)) return parsed;
+    }catch(e){}
+  }
+
+  return { items:candidates.slice(0,6).map(x=>({
+    name:x.name,
+    meta:`${x.category} • ${Math.round(x.distanceKm)} km`,
+    why:"A real nearby option that fits the requested search area."
+  })) };
+}
+
+function normalizeUrl(url) {
+  if(!url) return "";
+  if(/^https?:\/\//i.test(url)) return url;
+  return "https://" + url.replace(/^\/+/,"");
+}
+
+function haversine(lat1, lon1, lat2, lon2) {
+  const R=6371;
+  const toRad=d=>d*Math.PI/180;
+  const dLat=toRad(lat2-lat1), dLon=toRad(lon2-lon1);
+  const a=Math.sin(dLat/2)**2+Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+  return 2*R*Math.asin(Math.sqrt(a));
 }
 
 function findOutputText(node) {
