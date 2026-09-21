@@ -21,6 +21,16 @@ export default {
       return Response.json(cached || { items: [], updatedAt: null });
     }
 
+    if (url.pathname === "/api/plan" && request.method === "POST") {
+      try {
+        const body = await request.json();
+        const result = await buildTravelPlan(body?.prompt, env);
+        return Response.json(result);
+      } catch (error) {
+        return Response.json({ ok:false, error:String(error?.message || error) }, { status:500 });
+      }
+    }
+
     if (url.pathname === "/api/activities" && request.method === "POST") {
       try {
         const input = await request.json();
@@ -296,6 +306,88 @@ Return concise structured data for the DadOS cards.`;
   throw lastError || new Error("All Gemini fallback models failed.");
 }
 
+
+
+async function buildTravelPlan(rawPrompt, env) {
+  const prompt = String(rawPrompt || "").trim().slice(0, 500);
+  if (!prompt) throw new Error("Missing trip or activity description.");
+  if (!env.GEMINI_API_KEY) throw new Error("Gemini is not connected.");
+
+  const plannerPrompt = `You are the planner behind DadOS, a private recommendation dashboard.
+
+The user will describe something they are doing soon. Create a structured recommendation brief that changes materially based on the actual request.
+
+DadOS taste:
+- prefers reputable, well-built products over generic cheap junk
+- likes cameras, drones, travel technology, smart glasses, useful upgrades, clever hardware
+- low-clutter practicality matters
+- travel cleanliness / hotel comfort can be useful
+- normal apps/accounts are fine
+- do not over-focus on privacy
+- do not invent a specific product unless you are reasonably confident it is real
+- when unsure, recommend a product TYPE instead of fabricating a model
+- prioritize recommendations that actually fit the destination/activity
+- different prompts MUST produce meaningfully different categories and items
+
+User request:
+${prompt}
+
+Return 4 to 6 sections, each with 2 to 4 concise recommendations. Choose categories based on this request rather than repeating a fixed template.
+
+For each item include:
+- name
+- why it fits THIS request
+- a Google search URL for research
+
+Return JSON only with:
+{
+  "summary":"1-2 sentence overview",
+  "sections":[
+    {
+      "title":"section title",
+      "items":[
+        {"name":"item","why":"reason","searchUrl":"https://www.google.com/search?q=..."}
+      ]
+    }
+  ]
+}`;
+
+  const parsed = await callGeminiJson(plannerPrompt, env);
+  parsed.ok = true;
+  return parsed;
+}
+
+async function callGeminiJson(prompt, env) {
+  const models = [
+    env.GEMINI_MODEL || "gemini-3.8-flash",
+    "gemini-3.7-flash",
+    "gemini-3.6-flash"
+  ].filter((m,i,a)=>a.indexOf(m)===i);
+
+  let last = null;
+  for (const model of models) {
+    for (let attempt=0; attempt<2; attempt++) {
+      try {
+        const res = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
+          method:"POST",
+          headers:{"x-goog-api-key":env.GEMINI_API_KEY,"Content-Type":"application/json"},
+          body:JSON.stringify({model,input:prompt,response_format:{type:"text",mime_type:"application/json"}})
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const text = findOutputText(data);
+          if (!text) throw new Error(`${model} returned no text`);
+          return JSON.parse(text);
+        }
+        const body = await res.text();
+        last = new Error(`${model}: ${res.status} ${body}`);
+        if (!(res.status === 429 || res.status >= 500)) throw last;
+      } catch (e) { last = e; }
+      await new Promise(r=>setTimeout(r,700*(attempt+1)));
+    }
+  }
+  throw last || new Error("All Gemini models failed.");
+}
 
 async function findActivities(input, env) {
   const location = String(input.location || "Reston, Virginia").slice(0,120);
