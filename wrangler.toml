@@ -7,5 +7,9 @@ directory = "./public"
 binding = "ASSETS"
 run_worker_first = ["/api/*"]
 
+[[kv_namespaces]]
+binding = "DADOS_KV"
+id = "a1b456cb2be849cf9b229ce801b6072e"
+
 [triggers]
 crons = ["0 11,12,23 * * *", "0 0 * * *"]
